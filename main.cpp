@@ -61,6 +61,16 @@ bool test_spsc() {
 		return false;
 	}
 
+	uint8_t in = 'X';
+	spsc.put(in);
+	uint8_t p;
+	spsc.peek(p);
+	uint8_t out;
+	spsc.get(out);
+	if (in != p || in != out) {
+		return false;
+	}
+
 	std::random_device rand_device;
 	std::mt19937 reand_engine(rand_device());
 

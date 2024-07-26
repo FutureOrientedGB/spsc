@@ -108,6 +108,12 @@ public:
 		return (uint32_t)m_ring_buffer.buffer_size() - load_relaxed(m_input_offset) + load_relaxed(m_output_offset);
 	}
 
+	uint32_t put(const T item)
+	{
+		T buff[] = { item };
+		return put(buff, 1);
+	}
+
 	uint32_t put(const std::vector<T> &input_buffer)
 	{
 		return put(input_buffer.data(), (uint32_t)input_buffer.buffer_size());
@@ -140,6 +146,27 @@ public:
 		store_relaxed(m_input_offset, load_relaxed(m_input_offset) + length);
 
 		return length;
+	}
+
+	uint32_t peek(T &item)
+	{
+		uint32_t length = std::min(1u, load_relaxed(m_input_offset) - load_relaxed(m_output_offset));
+		if (length <= 0) {
+			return 0;
+		}
+
+		uint32_t read_offset = load_relaxed(m_output_offset) & ((uint32_t)m_ring_buffer.size() - 1);
+		item = m_ring_buffer[read_offset];
+
+		return length;
+	}
+
+	uint32_t get(T &item)
+	{
+		T buf[] = { item };
+		auto count = get(buf, 1);
+		item = buf[0];
+		return count;
 	}
 
 	uint32_t get(std::vector<T> &output_buffer)
