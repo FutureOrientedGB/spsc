@@ -56,8 +56,8 @@ bool is_file_content_same(const std::string &file1, const std::string &file2, si
 
 
 bool test_spsc() {
-	lock_free_spsc<uint8_t> spsc_buffer(MAX_BUFF_SIZE);
-	if (spsc_buffer.is_null()) {
+	lock_free_spsc<uint8_t> spsc(MAX_BUFF_SIZE);
+	if (spsc.is_buffer_null()) {
 		return false;
 	}
 
@@ -67,23 +67,23 @@ bool test_spsc() {
 	std::atomic<bool> produce_finished = false;
 
 	std::thread produce_thread(
-		[&spsc_buffer, &produce_finished, &reand_engine]() {
+		[&spsc, &produce_finished, &reand_engine]() {
 			std::ofstream file_stream(TEST_FILE_PATH);
 
 			std::uniform_int_distribution<> size_distribution(1, MAX_BUFF_SIZE - 1);
 			std::uniform_int_distribution<> char_distribution(0, (int)characters.size() - 1);
 			for (size_t loops = WRITE_LOOPS; loops > 0; loops--) {
-				size_t size = size_distribution(reand_engine);
+				size_t buffer_size = size_distribution(reand_engine);
 
 				std::vector<uint8_t> buf;
-				while (buf.size() < size) {
+				while (buf.size() < buffer_size) {
 					buf.push_back(characters[char_distribution(reand_engine)]);
 				}
 				buf.push_back('\n');
 
 				uint32_t offset = 0;
 				while (offset < buf.size()) {
-					uint32_t count = spsc_buffer.put(buf.data() + offset, (uint32_t)buf.size() - offset);
+					uint32_t count = spsc.put(buf.data() + offset, (uint32_t)buf.size() - offset);
 					offset += count;
 				}
 
@@ -95,7 +95,7 @@ bool test_spsc() {
 	);
 
 	std::thread consume_thread(
-		[&spsc_buffer, &produce_finished, &reand_engine]() {
+		[&spsc, &produce_finished, &reand_engine]() {
 			std::ofstream file_stream(COMPARE_FILE_PATH);
 
 			std::uniform_int_distribution<> size_distribution(1, MAX_BUFF_SIZE - 1);
@@ -105,7 +105,7 @@ bool test_spsc() {
 
 				uint32_t offset = 0;
 				while (offset < buf.size() && !produce_finished) {
-					uint32_t count = spsc_buffer.get(buf.data() + offset, (uint32_t)buf.size() - offset);
+					uint32_t count = spsc.get(buf.data() + offset, (uint32_t)buf.size() - offset);
 					offset += count;
 				}
 
@@ -115,7 +115,7 @@ bool test_spsc() {
 			std::vector<uint8_t> buf;
 			buf.resize(MAX_BUFF_SIZE, 0);
 
-			uint32_t offset = spsc_buffer.get(buf.data(), (uint32_t)buf.size());
+			uint32_t offset = spsc.get(buf.data(), (uint32_t)buf.size());
 			if (offset > 0) {
 				file_stream.write((const char *)buf.data(), sizeof(uint8_t) * offset);
 			}
