@@ -61,6 +61,7 @@ bool test_spsc() {
 		return false;
 	}
 
+	// test put, peek, get single item
 	uint8_t in = 'X';
 	spsc.put(in);
 	uint8_t p;
@@ -70,6 +71,27 @@ bool test_spsc() {
 	if (in != p || in != out) {
 		return false;
 	}
+
+	// test put_until_success, get_util_half_success
+	spsc.clear();
+
+	std::vector<uint8_t> data;
+	for (int i = 0; i < MAX_BUFF_SIZE; i++) {
+		data.push_back('0' + i);
+	}
+	for (int i = 0; i < 100; i++) {
+		int putted = spsc.put_until_full(data.data(), data.size());
+
+		std::vector<uint8_t> buff(MAX_BUFF_SIZE);
+		int getted = spsc.get_util_half_success(buff.data(), buff.size());
+
+		if (getted != putted) {
+			return false;
+		}
+	}
+
+	// test single produce thread with single consume thread
+	spsc.clear();
 
 	std::random_device rand_device;
 	std::mt19937 reand_engine(rand_device());
@@ -140,7 +162,8 @@ bool test_spsc() {
 
 
 
-int main() {
+int main(int argc, char **argv) {
+
 	if (test_spsc()) {
 		std::cout << "lock_free_spsc<uint8_t>(10) test ok" << std::endl;
 	}
