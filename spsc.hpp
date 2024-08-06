@@ -6,6 +6,7 @@
 // c++
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <memory>
 #include <vector>
 
@@ -53,7 +54,10 @@ public:
 		: m_stopping(false)
 		, m_input_offset(0)
 		, m_output_offset(0)
-
+		, m_last_full_log_time(std::chrono::steady_clock::now())
+		, m_last_full_log_repeat_times(0)
+		, m_last_empty_log_time(std::chrono::steady_clock::now())
+		, m_last_empty_log_repeat_times(0)
 	{
 	}
 
@@ -80,12 +84,18 @@ public:
 		m_input_offset = 0;
 		m_output_offset = 0;
 
+		m_last_full_log_repeat_times = 0;
+		m_last_empty_log_repeat_times = 0;
+
 		if (0 == buffer_size) {
 			m_stopping = true;
 			m_ring_buffer.clear();
 		}
 		else {
 			m_stopping = false;
+
+			m_last_full_log_time = std::chrono::steady_clock::now() - std::chrono::seconds(10);
+			m_last_empty_log_time = std::chrono::steady_clock::now() - std::chrono::seconds(10);
 
 			if (buffer_size & (buffer_size - 1)) {
 				buffer_size = roundup_pow_of_two(buffer_size);
@@ -104,7 +114,7 @@ public:
 
 	uint32_t buffer_size()
 	{
-		return (uint32_t)m_ring_buffer.buffer_size();
+		return (uint32_t)m_ring_buffer.size();
 	}
 
 	bool is_buffer_null()
@@ -140,7 +150,7 @@ public:
 
 	uint32_t put(const std::vector<T> &input_buffer)
 	{
-		return put(input_buffer.data(), (uint32_t)input_buffer.buffer_size());
+		return put(input_buffer.data(), (uint32_t)input_buffer.size());
 	}
 
 	uint32_t put_if_not_full(const T *input_buffer, uint32_t length)
@@ -168,10 +178,17 @@ public:
 		uint32_t buffer_size = (uint32_t)m_ring_buffer.size();
 		length = std::min(length, buffer_size - LOAD_ATOMIC_RELAXED(m_input_offset) + LOAD_ATOMIC_RELAXED(m_output_offset));
 		if (length <= 0) {
-			SPDLOG_WARN(
-				"no space available, this: {}, buffer_size({}) - input_offset({}) + output_offset({}) = {}",
-				fmt::ptr(this), m_ring_buffer.size(), LOAD_ATOMIC_RELAXED(m_input_offset), LOAD_ATOMIC_RELAXED(m_output_offset), available_space_size()
-			);
+			m_last_full_log_repeat_times++;
+			auto now = std::chrono::steady_clock::now();
+			auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - m_last_full_log_time).count();
+			if (ms > 10000) {
+				m_last_full_log_time = now;
+				SPDLOG_WARN(
+					"no space, n: {}, p: {}, s({}) - w({}) + o({}) = {}\n",
+					m_last_full_log_repeat_times, fmt::ptr(this), m_ring_buffer.size(), LOAD_ATOMIC_RELAXED(m_input_offset), LOAD_ATOMIC_RELAXED(m_output_offset), available_space_size()
+				);
+				m_last_full_log_repeat_times = 0;
+			}
 			return 0;
 		}
 
@@ -256,10 +273,17 @@ public:
 	{
 		length = std::min(length, LOAD_ATOMIC_RELAXED(m_input_offset) - LOAD_ATOMIC_RELAXED(m_output_offset));
 		if (length <= 0) {
-			SPDLOG_WARN(
-				"no data available, this: {}, buffer_size: {}, input_offset({}) - output_offset({}) = {}",
-				fmt::ptr(this), m_ring_buffer.size(), LOAD_ATOMIC_RELAXED(m_input_offset), LOAD_ATOMIC_RELAXED(m_output_offset), available_data_size()
-			);
+			m_last_empty_log_repeat_times++;
+			auto now = std::chrono::steady_clock::now();
+			auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - m_last_empty_log_time).count();
+			if (ms > 10000) {
+				m_last_empty_log_time = now;
+				SPDLOG_WARN(
+					"no data, n: {}, p: {}, s({}) - w({}) + o({}) = {}\n",
+					m_last_empty_log_repeat_times, fmt::ptr(this), m_ring_buffer.size(), LOAD_ATOMIC_RELAXED(m_input_offset), LOAD_ATOMIC_RELAXED(m_output_offset), available_data_size()
+				);
+				m_last_empty_log_repeat_times = 0;
+			}
 
 			return 0;
 		}
@@ -292,5 +316,13 @@ private:
 	std::vector<T> m_ring_buffer;  // the buffer holding the data
 	std::atomic<uint32_t> m_input_offset;  // data is added at offset: m_input_offset % (size - 1)
 	std::atomic<uint32_t> m_output_offset;  // data is extracted from offset: m_output_offset % (size - 1)
+	// last full log time
+	std::chrono::steady_clock::time_point m_last_full_log_time;
+	// log full log repeat times
+	uint32_t m_last_full_log_repeat_times;
+	// last empty log time
+	std::chrono::steady_clock::time_point m_last_empty_log_time;
+	// log empty log repeat times
+	uint32_t m_last_empty_log_repeat_times;
 };
 
